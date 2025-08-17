@@ -1,0 +1,95 @@
+appx is 7z compressed archive
+msix is zip compressed archive
+
+both contain a file called AppxBundleManifest.xml or AppxManifest.xml , either at the root directory, or in a subdirectory THESE HAVE DIFFERENT SYNTAX
+	presumably AppxBundleManifest.xml is for bundles of appx or msixs within an appx or msix
+	whereas AppxManifest.xml is for an appx or msix containing an exectutable
+	
+
+the ___ AppxBundleManifest.xml ___ file has a <Packages> tag that has a Package tag.
+	The Package tag has a Type attribute that has to be set to "application".
+	The Package tag also has an Architecture attribute that is either "x64" "x86" or "arm"
+	The Package tag also has a FileName tag that is either a nested appx or an exe
+	The Package tag also has a Resources tag
+		This Resources tag has a Resource tag that has a Language attribute that is set to something like "EN" or "EN-GB"
+			it searches for <Package Type="resource"><Resources><Resource Language="EN-GB">
+				if this is not found, it doesn't install a Language msix/appx
+		This Resources tag has a Resource tag that has a Scale attribute that is set to something like "200"
+			it searches for <Package Type="resource"><Resources><Resource Scale="200">
+				if this is not found, it installs the msix of the last scale listed, or half of 200
+	The Package tag also has a dependencies tag that can be ignored for now.
+
+	The Package tag might have a attribute set to "resource"
+	This has a filename and an architecture too.
+	And a Resources tag that has a Resource that, in turn has a Language attribute.
+
+the ___ AppxManifest.xml file has a <Package> tag that has
+	a <Dependencies> tag
+		that has a <PackageDependency> tag
+			that has a Name attribute corresponding to the start of the filename of a dependency
+			a MinVersion tag that corresponds to the min version
+				found in the filename after the Name with a '_' seperator inbetween the Name and the version
+	a <Resources> tag
+		This Resources tag has a Resource tag that has a Language attribute that is set to something like "EN" or "EN-GB"
+	an <Applications> tag
+		which has an "<Application>" tag
+			which has an Executable attribute with the file name of the executable
+			an EntryPoint tag ... which might be something idk
+
+_____________________________________
+
+####___The bundle msix___####
+
+==variables==
+<identityname>_<somestring>.appx  , from og appx file
+<Identity Version>, from the AppxBundleManifest.xml in og appx file
+
+==generates filename==
+
+drive_c/Program\ Files/WindowsApps/<identityname>_<Identity Version>_neutral_~_<somecode>
+
+#note the tilde
+
+==contents==
+
+AppxBlockMap.xml is copied
+AppxSignature.p7x is copied
+we need to know the contents of AppxMetadata directory
+we need to know the contents of microsoft.system.package.metadata directory
+
+
+####____The Scale msix _____####
+
+==variables==
+<identityname>_<somestring>.appx  , from og appx file
+<Package ResourceId> , from AppxBundleManifest.xml in og appx file
+
+==generates filename===
+
+drive_c/Program\ Files/WindowsApps/<identityname>_<Package Version>_neutral_<Package ResourceId>_<somecode>
+
+==contents ====
+
+it looks like pretty much all files and folders are copied except '[Content_Types].xml'
+we need to know the contents of microsoft.system.package.metadata directory
+
+
+####___The architecture msix____####
+
+==variables==
+<identityname>_<somestring>.appx  , from og appx file
+<Package Architecture>, from the AppxBundleManifest.xml in og appx file
+
+==generates filename==
+
+drive_c/Program\ Files/WindowsApps/<identityname>_<Package Version>_<Package Architecture>__<Package ResourceId>_<somecode>
+
+#note the double underscore
+
+==contents==
+
+it looks like pretty much all files and folders are copied except '[Content_Types].xml'
+
+an additional folder appears called
+	microsoft.system.package.metadata
+		we need to know the contents of this
