@@ -6,6 +6,7 @@ exit
 }
 
 process_install_list(){
+
 	if [ ! -d "$1" ]; then
 		echo "Argv1 to process_install_list is WINEHOME, this has not been found, so exiting."
 		cleanupAndExit
@@ -17,82 +18,96 @@ process_install_list(){
 
 	cat /tmp/appx/install_list.txt | while read line; do
 		if [ ! -d "$1/drive_c/Program Files/WindowsApps/$(basename "$line")" ]; then
-			appxbundlemanifest=""
+			appxmanifest=""
 			appxmanifest="$(find "$line" -type f -name AppxManifest.xml | head -n 1)"
 
 			if ! [ -f "$appxmanifest" ]; then
-				appxbundlemanifest="$(find "$line" -type f -name "AppxBundleManifest.xml" | head -n 1)"
-				if ! [ -f "$appxbundlemanifest" ]; then
+				appxmanifest="$(find "$line" -type f -name "AppxBundleManifest.xml" | head -n 1)"
+				if ! [ -f "$appxmanifest" ]; then
 					printf "Could not find AppxManifest.xml or AppxBundleManifest.xml within archive, exiting.\n"
 					cleanupAndExit
-				else
-					#appxbundlemanifest
+				fi
+			fi
 
-					packageBlock="$(printTag "$(cat "$appxmanifest")" "Package" "")"
-					identityTag="$(printTag "${packageBlock}" "Identity")"
-					nameTag="$(printf "%s" "${identityTag}" | grep -o "Name=\".*" | cut -d '"' -f 2)"
-					architectureTag="$(printf "%s" "${identityTag}" | grep -o "ProcessorArchitecture=\".*" | cut -d '"' -f 2)"
+			packageBlock="$(printTag "$(cat "$appxmanifest")" "Package" "")"
+			identityTag="$(printTag "${packageBlock}" "Identity")"
+			nameTag="$(printf "%s" "${identityTag}" | grep -o "Name=\".*" | cut -d '"' -f 2)"
+			publisherTag="$(printf "%s" "${identityTag}" | grep -o "Publisher=\".*" | cut -d '"' -f 2)"
+			architectureTag="$(printf "%s" "${identityTag}" | grep -o "ProcessorArchitecture=\".*" | cut -d '"' -f 2)"
+
+			if [ "$nameTag" != "" ]; then
+
+				versionTag="$(printf "%s" "${identityTag}" | grep -o "Version=\".*" | cut -d '"' -f 2)"
 	
-					if [ "$nameTag" != "" ]; then
-	
-						versionTag="$(printf "%s" "${identityTag}" | grep -o "Version=\".*" | cut -d '"' -f 2)"
-	
-						if [ "$versionTag" != "" ]; then
+				if [ "$versionTag" != "" ]; then
 	
 	
-							old_IFS="$IFS"
-							IFS='<'
+					old_IFS="$IFS"
+					IFS='<'
+					readIndex=0
+					appxFilename=""
+					appxScale=""
+					appxLanguage=""
+					printf "%s\n" "$packageBlock" | while read lineTwo; do
+
+						#read packages tag if it exists
+						if [ "$(printf "%s\n" "$lineTwo" | grep "<.*Package.*>")" != "" ] && [ "$readIndex" = "0" ]; then
+							#check packages tag is of Type "Application"
+							if [ "$(printf "%s\n" "$lineTwo" | grep "<.* Type=\"Application\" .*>")" != "" ]; then
+								#check packages architecture is the same as theArch
+								if [ "$(printf "%s\n" "$lineTwo" | grep "<.* Architecture=\"${theArch}\" .*>")" != "" ]; then
+									appxFilename="$(printf "%s\n" "$lineTwo" | grep -Po "FileName=\".*?\"")"
+								fi
+							fi
+
+							readIndex="1"
+						elif [ "$(printf "%s\n" "$lineTwo" | grep "<\s*Resources.*>")" != "" ] && ( [ "$readIndex" = 1 ] || [ "$readIndex" = 3 ] ); then
+							#if [ "$appxFilename" != "" ]; then
+								readIndex=2
+							#fi
+						elif [ "$(printf "%s\n" "$lineTwo" | grep "<\s*/\s*Resources.*>")" != "" ] && [ "$readIndex" = 2 ]; then
+							#end tag
+							readIndex=1
+						elif [ "$(printf "%s\n" "$lineTwo" | grep "<\s*Resource.*>")" != "" ] && [ "$readIndex" = 2 ]; then
+							#if [ "$appxFilename" != "" ]; then
+
+								if [ "${appxLanguage}" = "en-US" ]; then
+									foundLang="en-US"
+								elif [ "${appxLanguage}" = "" ]; then
+									appxLanguage="$(printf "%s\n" "$lineTwo" | grep -Po "Language=\"${theLanguage}\"")"
+								fi
+								#default to 'merica packages if our lang is not found
+								if [ "$appxLanguage" = "" ] && [ "$foundLang" = "" ]; then
+									appxLanguage="$(printf "%s\n" "$lineTwo" | grep -Po "Language=\"en-US\"")"
+								elif [ "$foundLang" = "en-US" ]; then
+									appxLanguage="en-US"
+								fi
+
+								readScale="$(printf "%s\n" "$lineTwo" | grep -o "Scale=\".*\"")"
+								if [ "$readScale" != "" ]; then
+									appxScale="$(printf "%s" "$readScale" | cut -d '"' -f 2)"
+								fi
+							#fi
+						elif [ "$(printf "%s\n" "$lineTwo" | grep "<\s*/\s*Package.*>")" != "" ] && [ "$readIndex" = "1" ]; then
+echo $appxLanguage MMM $nameTag
+							if [ "$appxLanguage" != "" ] && [ "$nameTag" != "" ]; then
+								echo "Installing $nameTag ..."
+								if [ "$publisherTag" = "" ]; then 
+									cp -a "$line" "$1/drive_c/Program Files/WindowsApps/${nameTag}_${versionTag}_${architectureTag}_${appxScale}"
+								else
+									pubhash="$(printf "%s" "$(python3 "${2}/deps/pubid.py" "${publisherTag}")")"
+
+									cp -a "$line" "$1/drive_c/Program Files/WindowsApps/${nameTag}_${versionTag}_${architectureTag}_${appxScale}_${pubhash}"
+								fi
+							fi
+
 							readIndex=0
 							appxFilename=""
 							appxScale=""
-							passLanguage=1
-							printf "%s" packageBlock | while read line; do
-							#read packages tag if it exists
-							if [ "$(printf "%s\n" "$line" | grep "<.*Package.*>")" != "" ] && [ "$readIndex" = "0" ]; then
-								#check packages tag is of Type "Application"
-								if [ "$(printf "%s\n" "$line" | grep "<.* Type=\"Application\" .*>")" != "" ]; then
-									#check packages architecture is the same as theArch
-									if [ "$(printf "%s\n" "$line" | grep "<.* Architecture=\"${theArch}\" .*>")" != "" ]; then
-										appxFilename="$(printf "%s\n" "$line" | grep -Po "FileName=\".*?\"")"
-										readIndex="1"
-									fi
-								fi
-							elif [ "$(printf "%s\n" "$line" | grep "<.*Resources.*>")" != "" ] && ( [ "$readIndex" = 1 ] || [ "$readIndex" = 3 ] ); then
-								if [ "$appxFilename" != "" ]; then
-									readIndex=2
-								fi
-							elif [ "$(printf "%s\n" "$line" | grep "<.*Resource.*>")" != "" ] && [ "$readIndex" = 2 ]; then
-								if [ "$appxFilename" != "" ]; then
-									appxLanguage="$(printf "%s\n" "$line" | grep -Po "Language=\"${theLanguage}\"")"
-									if [ "$passLanguage" = "1" ] && [ "$appxLanguage" = "" ]; then
-										passLanguage=0
-									elif [ "$appxLanguage" != "" ]; then
-										passLanguage=2
-									fi
-		
-									readScale="$(printf "%s\n" "$line" | grep -Po "Scale=\".?*\"")"
-									if [ "$readScale" != "" ]; then
-										appxScale="$(printf "%s" "$readScale" | cut -d '"' -f 2)"
-									fi
-								fi
-							elif [ "$(printf "%s\n" "$line" | grep "</.*Resources.*>")" != "" ] && [ "$readIndex" = 2 ]; then
-								#end tag
-								readIndex=1
-							elif [ "$(printf "%s\n" "$line" | grep "</.*Package.*>")" != "" ] && [ "$readIndex" = "1" ]; then
-								if [ "$passLanguage" -gt 0 ] && [ "$appxFilename" != "" ]; then
-									echo "TODO: process appx"
-									echo "Installing $nameTag ..."
-									cp -a "$line" "$1/drive_c/Program Files/WindowsApps/${nameTag}_${versionTag}_${architectureTag}_${appxScale}"
-								fi
-								readIndex=0
-								appxFilename=""
-								appxScale=""
-								passLanguage=1
-							fi
-	
-						done
-						IFS="$old_IFS"
-					fi
+							appxLanguage=""
+						fi	
+					done
+					IFS="$old_IFS"
 				fi
 			fi
 
@@ -214,8 +229,7 @@ checkDependency()
 {
 	foundDependencyAlready="0"
 
-	nameLowerCase="$(printf "%s" "$4" | tr '[:upper:]' '[:lower:]')"
-	lengthName="$(expr length "$nameLowerCase")"
+	lengthName="$(expr length "$4")"
 	lengthName="$(expr $lengthName + 1)"
 
 	old_IFS="$IFS"
@@ -223,17 +237,21 @@ export IFS='
 '
 
 	#check to see if we have the dependency already installed in the WindowsApps folder
-	for candidatePath in $(find "$1/drive_c/Program Files/WindowsApps" -type d -maxdepth 1 -name "${nameLowerCase}_*") ; do
+
+	for candidatePath in $(find "$1/drive_c/Program Files/WindowsApps" -maxdepth 1 -type d -iname "${4}_*") ; do
+
 		candidate="$(printf "%s" "$(basename "$candidatePath")" | cut -c ${lengthName}-)"
-		candidateArch="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 2)"
+		candidateArch="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 3)"
 		#if the candidate arch is not the 3rd field, use the second
 		if [ "$candidateArch" = "" ]; then
-			candidateArch="$(printf "%s" "$(basename "$candidate")" | cut -d '_' -f 1)"
-			if [ "$candidateArch" = "neutral" ] || [ "$candidateArch" = "$3" ]; then
-				foundDependencyAlready=1
-				break
-			fi
+			candidateArch="$(printf "%s" "$(basename "$candidate")" | cut -d '_' -f 2)"
 		fi
+
+		if [ "$candidateArch" = "neutral" ] || [ "$candidateArch" = "$3" ]; then
+			foundDependencyAlready=1
+			break
+		fi
+
 
 		if [ "$candidateArch" = "neutral" ] || [ "$candidateArch" = "$3" ]; then
 			candidateVersion="$(printf "%s" "$(basename "$candidate")" | cut -d '_' -f 1)"
@@ -253,16 +271,16 @@ export IFS='
 	if [ "$foundDependencyAlready" = "0" ]; then
 		for candidatePath in $(find "/tmp/appx" -type d -maxdepth 1 -mindepth 1 -name "$4_*") ; do
 			candidate="$(printf "%s" "$(basename "$candidatePath")" | cut -c ${lengthName}-)"
-			candidateArch="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 2)"
+			candidateArch="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 3)"
 
 			#if the candidate arch is not the 3rd field, use the second
 			if [ "$candidateArch" = "" ]; then
-				candidateArch="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 1)"
-				if [ "$candidateArch" = "neutral" ] || [ "$candidateArch" = "$3" ]; then
-					echo "$candidatePath" >> /tmp/appx/install_list.txt
-					foundDependencyAlready=1
-					break
-				fi
+				candidateArch="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 2)"
+			fi
+			if [ "$candidateArch" = "neutral" ] || [ "$candidateArch" = "$3" ]; then
+				echo "$candidatePath" >> /tmp/appx/install_list.txt
+				foundDependencyAlready=1
+				break
 			fi
 			if [ "$candidateArch" = "neutral" ] || [ "$candidateArch" = "$3" ]; then
 				candidateVersion="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 1)"
@@ -282,15 +300,16 @@ export IFS='
 	if [ "$foundDependencyAlready" = "0" ]; then
 		find "/tmp/appx" -type f -name "$4_*.msix" -o -name "$4_*.appx" | while read candidatePath; do
 			candidate="$(printf "%s" "$(basename $candidatePath)" | cut -c ${lengthName}-)"
-			candidateArch="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 2)"
+			candidateArch="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 3)"
 			if [ "$candidateArch" = "" ]; then
-				candidateArch="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 1)"
-				if [ "$candidateArch" = "neutral" ] || [ "$candidateArch" = "$3" ]; then
-					echo "$candidatePath" >> /tmp/appx/install_list.txt
-					foundDependencyAlready=1
-					break
-				fi
+				candidateArch="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 2)"
 			fi
+			if [ "$candidateArch" = "neutral" ] || [ "$candidateArch" = "$3" ]; then
+				echo "$candidatePath" >> /tmp/appx/install_list.txt
+				foundDependencyAlready=1
+				break
+			fi
+
 			if [ "$candidateArch" = "neutral" ] || [ "$candidateArch" = "$3" ]; then
 				candidateVersion="$(printf "%s" "$(basename "$candidatePath")" | cut -d '_' -f 1)"
 				#check candidate version is between max and min exclusive
@@ -342,6 +361,8 @@ if [ "$WINEHOME" = "" ]; then
 fi
 mkdir -p "${WINEHOME}/drive_c/Program Files/WindowsApps"
 
+
+thepwd="$(dirname "$(realpath "$0")")"
 
 theArch="x64"
 theLanguage="EN-GB"
@@ -400,20 +421,20 @@ echo $1
 					passLanguage=1
 					printf "%s" packageBlock | while read line; do
 						#read packages tag if it exists
-						if [ "$(printf "%s\n" "$line" | grep "<.*Package.*>")" != "" ] && [ "$readIndex" = "0" ]; then
+						if [ "$(printf "%s\n" "$line" | grep "<\s*Package.*>")" != "" ] && [ "$readIndex" = "0" ]; then
 							#check packages tag is of Type "Application"
-							if [ "$(printf "%s\n" "$line" | grep "<.* Type=\"Application\" .*>")" != "" ]; then
+							if [ "$(printf "%s\n" "$line" | grep "<.*\s*Type=\"Application\" .*>")" != "" ]; then
 								#check packages architecture is the same as theArch
-								if [ "$(printf "%s\n" "$line" | grep "<.* Architecture=\"${theArch}\" .*>")" != "" ]; then
+								if [ "$(printf "%s\n" "$line" | grep "<.*\s*Architecture=\"${theArch}\" .*>")" != "" ]; then
 									appxFilename="$(printf "%s\n" "$line" | grep -Po "FileName=\".*?\"")"
 									readIndex="1"
 								fi
 							fi
-						elif [ "$(printf "%s\n" "$line" | grep "<.*Resources.*>")" != "" ] && ( [ "$readIndex" = 1 ] || [ "$readIndex" = 3 ] ); then
+						elif [ "$(printf "%s\n" "$line" | grep "<\s*Resources.*>")" != "" ] && ( [ "$readIndex" = 1 ] || [ "$readIndex" = 3 ] ); then
 							if [ "$appxFilename" != "" ]; then
 								readIndex=2
 							fi
-						elif [ "$(printf "%s\n" "$line" | grep "<.*Resource.*>")" != "" ] && [ "$readIndex" = 2 ]; then
+						elif [ "$(printf "%s\n" "$line" | grep "<\s*Resource.*>")" != "" ] && [ "$readIndex" = 2 ]; then
 							if [ "$appxFilename" != "" ]; then
 								appxLanguage="$(printf "%s\n" "$line" | grep -Po "Language=\"${theLanguage}\"")"
 								if [ "$passLanguage" = "1" ] && [ "$appxLanguage" = "" ]; then
@@ -427,11 +448,11 @@ echo $1
 									appxScale="$(printf "%s" "$readScale" | cut -d '"' -f 2)"
 								fi
 							fi
-						elif [ "$(printf "%s\n" "$line" | grep "<.*Dependencies.*>")" != "" ] && ( [ "$readIndex" = 2 ] || [ "$readIndex" = 1 ] ); then
+						elif [ "$(printf "%s\n" "$line" | grep "<\s*Dependencies.*>")" != "" ] && ( [ "$readIndex" = 2 ] || [ "$readIndex" = 1 ] ); then
 							if [ "$passLanguage" -gt 0 ] && [ "$appxFilename" != "" ]; then
 								readIndex=3
 							fi
-						elif [ "$(printf "%s\n" "$line" | grep "<.*PackageDependency.*>")" != "" ] && [ "$readIndex" = 3 ]; then
+						elif [ "$(printf "%s\n" "$line" | grep "<\s*PackageDependency.*>")" != "" ] && [ "$readIndex" = 3 ]; then
 							if [ "$passLanguage" -gt 0 ] && [ "$appxFilename" != "" ]; then
 								dependencyMinVer="$(printf "%s\n" "$line" | grep -Po "MinVersion=\".*?\"")"
 								if [ "$dependencyMinVer" != "" ]; then
@@ -452,13 +473,13 @@ echo $1
 									fi
 								fi
 							fi
-						elif [ "$(printf "%s\n" "$line" | grep "</.*Dependencies.*>")" != "" ] && [ "$readIndex" = 3 ]; then
+						elif [ "$(printf "%s\n" "$line" | grep "<\s*/\s*Dependencies.*>")" != "" ] && [ "$readIndex" = 3 ]; then
 							#end tag
 							readIndex=1
-						elif [ "$(printf "%s\n" "$line" | grep "</.*Resources.*>")" != "" ] && [ "$readIndex" = 2 ]; then
+						elif [ "$(printf "%s\n" "$line" | grep "<\s*/\s*Resources.*>")" != "" ] && [ "$readIndex" = 2 ]; then
 							#end tag
 							readIndex=1
-						elif [ "$(printf "%s\n" "$line" | grep "</.*Package.*>")" != "" ] && [ "$readIndex" = "1" ]; then
+						elif [ "$(printf "%s\n" "$line" | grep "<\s*/\s*Package.*>")" != "" ] && [ "$readIndex" = "1" ]; then
 							if [ "$passLanguage" -gt 0 ] && [ "$appxFilename" != "" ]; then
 								echo "TODO: process appx"
 								echo "processappx "$WINEHOME" "$PWD" "$appxFilename" "$nameTag" "$versionTag" "$appxScale""
@@ -496,7 +517,7 @@ echo $1
 				old_IFS="$IFS"
 				IFS='<'
 				printf "%s" "${dependenciesBlock}" | while read line; do
-					if [ "$(printf "%s\n" "$line" | grep "<PackageDependency.*>")" != "" ]; then
+					if [ "$(printf "%s\n" "$line" | grep "<\s*PackageDependency.*>")" != "" ]; then
 
 						dependencyMinVer="$(printf "%s\n" "$line" | grep -Po "MinVersion=\".*?\"")"
 						if [ "$dependencyMinVer" != "" ]; then
@@ -528,12 +549,11 @@ echo $1
 
 	fi
 
-	process_install_list "$WINEHOME"
+	process_install_list "$WINEHOME" "${thepwd}"
 
 elif [ -d "$1" ]; then
 	echo
-
-	process_install_list "$WINEHOME"
+	process_install_list "$WINEHOME" "${thepwd}"
 
 else
 	printf "argv[1]: appx file to install or directory of appx files\n"
