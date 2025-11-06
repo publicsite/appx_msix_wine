@@ -1,5 +1,8 @@
 #!/bin/sh
 
+OLD_UMASK="$(umask)"
+umask 0022
+
 cleanupAndExit(){
 #rm -rf /tmp/appx
 exit
@@ -558,5 +561,7 @@ elif [ -d "$1" ]; then
 else
 	printf "argv[1]: appx file to install or directory of appx files\n"
 fi
+
+umask "${OLD_UMASK}"
 
 cleanupAndExit
